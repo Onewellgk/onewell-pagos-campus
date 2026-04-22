@@ -1,0 +1,22 @@
+{
+  "name": "onewell-pagos-campus",
+  "version": "0.1.0",
+  "description": "Sistema de gestión de recordatorios y cobros Campus PRO 2026 — Onewell GK Academy",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "audit:emails": "node scripts/01-audit-emails.js",
+    "backfill:emails": "node scripts/02-backfill-emails.js",
+    "send-links": "node scripts/03-send-payment-links.js",
+    "webhook": "node scripts/04-webhook-stripe.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "resend": "^6.12.2",
+    "stripe": "^22.0.2"
+  }
+}

@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# Logs (mantenemos la carpeta con .gitkeep pero no subimos los CSV)
+logs/*
+!logs/.gitkeep
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Binarios locales (Stripe CLI descargado en raíz para pruebas)
+stripe.exe
