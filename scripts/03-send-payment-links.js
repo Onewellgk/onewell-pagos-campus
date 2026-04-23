@@ -19,6 +19,9 @@
  *   --live                       Ejecución real.
  *   --limit N                    Procesar solo los primeros N candidatos.
  *   --record-id <recId>          Saltarse el filtro y procesar ese registro.
+ *   --no-date-filter             Saltarse el filtro de fecha (procesar todos los
+ *                                candidatos con plazo próximo pendiente de
+ *                                recordatorio, no solo los de hoy+10 días).
  */
 
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -42,7 +45,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGS_DIR = join(__dirname, '..', 'logs');
 
 function parseArgs(argv) {
-  const args = { live: false, limit: null, recordId: null };
+  const args = { live: false, limit: null, recordId: null, noDateFilter: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--live') args.live = true;
@@ -55,6 +58,8 @@ function parseArgs(argv) {
     } else if (a === '--record-id') {
       args.recordId = argv[++i];
       if (!args.recordId) throw new Error(`--record-id requiere un valor`);
+    } else if (a === '--no-date-filter') {
+      args.noDateFilter = true;
     } else {
       throw new Error(`Argumento desconocido: ${a}`);
     }
@@ -310,8 +315,13 @@ async function main() {
     const r = await getCampusRecord(args.recordId);
     registros = [r];
   } else {
-    console.log('\n→ Buscando candidatos (fecha próximo plazo = hoy + 10 días, Madrid)...');
-    registros = await listCampusCandidatosPaymentLink({ diasDesdeHoy: 10 });
+    if (args.noDateFilter) {
+      console.log('\n→ Buscando candidatos (sin filtro de fecha; solo recordatorio aún no enviado)...');
+      registros = await listCampusCandidatosPaymentLink({ diasDesdeHoy: null });
+    } else {
+      console.log('\n→ Buscando candidatos (fecha próximo plazo = hoy + 10 días, Madrid)...');
+      registros = await listCampusCandidatosPaymentLink({ diasDesdeHoy: 10 });
+    }
   }
   console.log(`✓ ${registros.length} registro(s) a evaluar.\n`);
 

@@ -147,13 +147,18 @@ export async function listCampusCandidatosPaymentLink({ diasDesdeHoy = 10 } = {}
   const fieldsToFetch = allFieldsToFetchParaPaymentLink();
   const fieldsParam = fieldsToFetch.map((f) => `fields%5B%5D=${f}`).join('&');
 
-  const target = fechaEnMadridConOffset(diasDesdeHoy); // "YYYY-MM-DD"
+  // Si diasDesdeHoy es null, no filtramos por fecha: procesamos todos los candidatos
+  // con plazo próximo + importe > 0 + recordatorio aún no enviado. Útil para ejecutar
+  // bajo demanda fuera de la ventana estricta T-10.
+  const filtroFecha = diasDesdeHoy === null
+    ? ''
+    : `,IS_SAME({${CAMPUS_FIELDS.fechaProximoPlazo}}, '${fechaEnMadridConOffset(diasDesdeHoy)}', 'day')`;
+
   const formula = `AND(
     {${CAMPUS_FIELDS.saldoPendiente}}>0,
     {${CAMPUS_FIELDS.plazoProximo}}!='',
     {${CAMPUS_FIELDS.importeProximoPlazo}}>0,
-    {${CAMPUS_FIELDS.recordatorioEnviadoEn}}='',
-    IS_SAME({${CAMPUS_FIELDS.fechaProximoPlazo}}, '${target}', 'day')
+    {${CAMPUS_FIELDS.recordatorioEnviadoEn}}=''${filtroFecha}
   )`.replace(/\s+/g, ' ');
 
   const filter = encodeURIComponent(formula);
