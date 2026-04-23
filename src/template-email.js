@@ -32,7 +32,7 @@ export function renderPaymentLinkEmail({
 </ul>
 <p>Puedes completar el pago de forma segura a través del siguiente enlace: <a href="${paymentLinkUrl}">Pagar ahora</a></p>
 <p>Una vez realizado el pago recibirás automáticamente un justificante de Stripe por email.</p>
-<p>Si tienes cualquier duda, estamos a tu disposición.</p>
+<p style="color:#666;font-size:0.9em;font-style:italic;margin-top:20px;border-top:1px solid #eee;padding-top:12px;">Este es un mensaje automático enviado unos días antes del vencimiento. Si crees que lo has recibido por error, si ya has realizado el pago o para cualquier duda o casuística, contesta a este correo y te atendemos personalmente.</p>
 <p>Un saludo,<br>Onewell Gk</p>`;
 
   const text = `Hola ${nombreTutor},
@@ -47,7 +47,10 @@ Puedes completar el pago de forma segura aquí:
 ${paymentLinkUrl}
 
 Una vez realizado el pago recibirás automáticamente un justificante de Stripe por email.
-Si tienes cualquier duda, estamos a tu disposición.
+
+---
+Este es un mensaje automático enviado unos días antes del vencimiento. Si crees que lo has recibido por error, si ya has realizado el pago o para cualquier duda o casuística, contesta a este correo y te atendemos personalmente.
+---
 
 Un saludo,
 Onewell Gk`;
