@@ -106,16 +106,22 @@ function getFieldName(v) {
 }
 
 /**
- * Decide si el plazo actual se paga con tarjeta consultando explícitamente
- * `Plazos de pago` (singleSelect) y `Plazo próximo` (fórmula texto).
+ * Decide si el plazo actual se paga con tarjeta consultando los campos
+ * EDITABLES de decisión (fuente de verdad operativa), con fallback a las
+ * fórmulas auto legacy si la decisión aún no se ha poblado.
  *
+ * Lógica:
  *   - Plazo próximo "2º plazo" + Plazos contiene "fraccionado en 3"
- *       → Método 2o auto-3plazos === 'Tarjeta'
+ *       → Método 2º plazo (decisión) === 'Tarjeta'  [fuente: nuevo campo]
+ *       → fallback: Método 2o auto-3plazos === 'Tarjeta'  [legacy fórmula]
  *   - Plazo próximo "2º plazo" + Plazos contiene "fraccionado en 2"
- *       → Método 2o 2plazos comienza con 'Tarjeta'
+ *       → Método 2º plazo (decisión) === 'Tarjeta'  [fuente: nuevo campo]
+ *       → fallback: Método 2o 2plazos comienza con 'Tarjeta'  [legacy fórmula]
  *   - Plazo próximo "3r plazo"
- *       → Método 3r auto === 'Tarjeta'
+ *       → Método 3r plazo (decisión) === 'Tarjeta'  [fuente: nuevo campo]
+ *       → fallback: Método 3r auto === 'Tarjeta'  [legacy fórmula]
  *
+ * Si el campo de decisión tiene valor 'Efectivo' o 'Ya pagado' → false.
  * Cualquier otra combinación → false.
  */
 function esPagoTarjeta(fields) {
@@ -123,6 +129,12 @@ function esPagoTarjeta(fields) {
   const plazosPago = getFieldName(fields[CAMPUS_FIELDS.plazosDePago]);
 
   if (plazoProximo === '2º plazo') {
+    const decision2o = getFieldName(fields[CAMPUS_FIELDS.metodoPago2oDecision]);
+    if (decision2o) {
+      // Campo de decisión poblado → fuente de verdad
+      return decision2o === 'Tarjeta';
+    }
+    // Fallback a fórmulas legacy si la decisión aún no se ha inicializado
     if (plazosPago.includes('fraccionado en 3')) {
       return getFieldName(fields[CAMPUS_FIELDS.metodoPago2o3plazos]) === 'Tarjeta';
     }
@@ -133,6 +145,11 @@ function esPagoTarjeta(fields) {
   }
 
   if (plazoProximo === '3r plazo') {
+    const decision3r = getFieldName(fields[CAMPUS_FIELDS.metodoPago3rDecision]);
+    if (decision3r) {
+      return decision3r === 'Tarjeta';
+    }
+    // Fallback a fórmula legacy
     return getFieldName(fields[CAMPUS_FIELDS.metodoPago3r3plazos]) === 'Tarjeta';
   }
 
@@ -169,8 +186,10 @@ async function evaluarCandidato(record) {
   const customerId = (f[CAMPUS_FIELDS.stripeCustomerId] || '').trim() || null;
   const recordatorio = f[CAMPUS_FIELDS.recordatorioEnviadoEn] || null;
   const paymentLinkYa = f[CAMPUS_FIELDS.paymentLinkProximoPlazo] || null;
+  const estado = getFieldName(f[CAMPUS_FIELDS.estado]);
 
   const motivosSkip = [];
+  if (estado !== 'Inscrito') motivosSkip.push(`estado no es "Inscrito" (es "${estado || 'vacío'}")`);
   if (!email) motivosSkip.push('sin email de contacto');
   if (!plazo) motivosSkip.push(`plazo no reconocido ("${plazoTexto}")`);
   if (!(importe > 0)) motivosSkip.push(`importe inválido (${importe})`);

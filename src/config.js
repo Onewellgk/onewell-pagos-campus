@@ -68,10 +68,17 @@ export const CAMPUS_FIELDS = {
   paymentLinkProximoPlazo: 'fldVysmMAHPBEMhNO',
   alertaCoordinadorEnviadaEn: 'fldKEU2P5v2q8TNlq',
 
-  // Métodos de pago por plazo (fórmulas / singleSelect)
+  // Métodos de pago por plazo (fórmulas / singleSelect) — LEGACY, se mantienen
+  // para referencia histórica y para la inicialización de los campos de decisión.
   metodoPago2o3plazos: 'fldgg3oeLsF2Cglmn',
   metodoPago3r3plazos: 'fldDao4fFZygs2l5n',
   metodoPago2o2plazos: 'fldaczR0FW3XXiQ6b',
+
+  // Métodos de pago por plazo — DECISIÓN OPERATIVA (singleSelect editable por
+  // coordinadores). Son la fuente de verdad para el script 03. Valores posibles:
+  // 'Tarjeta', 'Efectivo', 'Ya pagado'.
+  metodoPago2oDecision: 'fldEDcen6Dr6QHTAK',
+  metodoPago3rDecision: 'fldbbbWfg2Ow2UfNu',
 
   // Resultado del pago (lo escribe el webhook)
   pagado2oPago: 'fld0dDnqW5ViN8eTo',
@@ -81,6 +88,11 @@ export const CAMPUS_FIELDS = {
 
   // Stripe
   stripeCustomerId: 'fldMPHtDsDSsiPMwJ',
+
+  // Estado de la inscripción — requisito para que el script procese cobros.
+  // Valores posibles: 'Interés inicial', 'Registro - Acceso prioritario',
+  // 'Inscrito', 'Baja', 'Solicitud de plaza'. El script solo procesa 'Inscrito'.
+  estado: 'fldQuL5odLqkWubzL',
 };
 
 // QIDs de Jotform (confirmados contra submission real)
