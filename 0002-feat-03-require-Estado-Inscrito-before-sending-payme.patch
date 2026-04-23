@@ -1,0 +1,65 @@
+From eeb7c98dc299f731ad6acc37e1b785a0e0ad2196 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Thu, 23 Apr 2026 15:11:11 +0000
+Subject: [PATCH 2/2] feat(03): require Estado='Inscrito' before sending
+ payment links
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Prevents accidental cobro to unsubscribed/cancelled registrations.
+Records with Estado='Baja', 'Interés inicial', 'Registro', or 'Solicitud
+de plaza' are now skipped with a clear reason, even if their decision
+method is Tarjeta. Accounting-safe: no need to misuse 'Ya pagado' label.
+---
+ scripts/03-send-payment-links.js | 2 ++
+ src/airtable.js                  | 1 +
+ src/config.js                    | 5 +++++
+ 3 files changed, 8 insertions(+)
+
+diff --git a/scripts/03-send-payment-links.js b/scripts/03-send-payment-links.js
+index bf39de6..217d03d 100644
+--- a/scripts/03-send-payment-links.js
++++ b/scripts/03-send-payment-links.js
+@@ -186,8 +186,10 @@ async function evaluarCandidato(record) {
+   const customerId = (f[CAMPUS_FIELDS.stripeCustomerId] || '').trim() || null;
+   const recordatorio = f[CAMPUS_FIELDS.recordatorioEnviadoEn] || null;
+   const paymentLinkYa = f[CAMPUS_FIELDS.paymentLinkProximoPlazo] || null;
++  const estado = getFieldName(f[CAMPUS_FIELDS.estado]);
+ 
+   const motivosSkip = [];
++  if (estado !== 'Inscrito') motivosSkip.push(`estado no es "Inscrito" (es "${estado || 'vacío'}")`);
+   if (!email) motivosSkip.push('sin email de contacto');
+   if (!plazo) motivosSkip.push(`plazo no reconocido ("${plazoTexto}")`);
+   if (!(importe > 0)) motivosSkip.push(`importe inválido (${importe})`);
+diff --git a/src/airtable.js b/src/airtable.js
+index 51549ce..8e5a9c9 100644
+--- a/src/airtable.js
++++ b/src/airtable.js
+@@ -213,6 +213,7 @@ function allFieldsToFetchParaPaymentLink() {
+     CAMPUS_FIELDS.metodoPago2o2plazos,
+     CAMPUS_FIELDS.metodoPago2oDecision,
+     CAMPUS_FIELDS.metodoPago3rDecision,
++    CAMPUS_FIELDS.estado,
+     CAMPUS_FIELDS.pagado2oPago,
+     CAMPUS_FIELDS.pagado3rPago,
+     CAMPUS_FIELDS.stripeCustomerId,
+diff --git a/src/config.js b/src/config.js
+index 0a3460f..49cf944 100644
+--- a/src/config.js
++++ b/src/config.js
+@@ -88,6 +88,11 @@ export const CAMPUS_FIELDS = {
+ 
+   // Stripe
+   stripeCustomerId: 'fldMPHtDsDSsiPMwJ',
++
++  // Estado de la inscripción — requisito para que el script procese cobros.
++  // Valores posibles: 'Interés inicial', 'Registro - Acceso prioritario',
++  // 'Inscrito', 'Baja', 'Solicitud de plaza'. El script solo procesa 'Inscrito'.
++  estado: 'fldQuL5odLqkWubzL',
+ };
+ 
+ // QIDs de Jotform (confirmados contra submission real)
+-- 
+2.43.0
+
