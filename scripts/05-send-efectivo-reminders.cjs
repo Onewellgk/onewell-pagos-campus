@@ -14,7 +14,7 @@
  *   node 05-send-efectivo-reminders.js --live --only=rec101VNb0nJWzLQt
  *
  * Env vars requeridas:
- *   AIRTABLE_API_KEY   (o AIRTABLE_TOKEN)
+ *   AIRTABLE_PAT       (o AIRTABLE_API_KEY / AIRTABLE_TOKEN)
  *   RESEND_API_KEY     (solo necesaria en --live)
  *
  * Comportamiento:
@@ -27,7 +27,6 @@
  *   - Si un envío falla, imprime el error y continúa con el siguiente.
  */
 
-const Airtable = require('airtable');
 const { Resend } = require('resend');
 
 // ============================================================
@@ -43,10 +42,10 @@ const FROM = 'Onewell Gk Academy <info@academy.onewellgk.com>';
 const REPLY_TO = 'info@academy.onewellgk.com';
 const DELAY_BETWEEN_EMAILS_MS = 800;
 
-const AIRTABLE_KEY = process.env.AIRTABLE_API_KEY || process.env.AIRTABLE_TOKEN;
+const AIRTABLE_KEY = process.env.AIRTABLE_PAT || process.env.AIRTABLE_API_KEY || process.env.AIRTABLE_TOKEN;
 const RESEND_KEY = process.env.RESEND_API_KEY;
 
-if (!AIRTABLE_KEY) { console.error('❌ Falta AIRTABLE_API_KEY / AIRTABLE_TOKEN'); process.exit(1); }
+if (!AIRTABLE_KEY) { console.error('❌ Falta AIRTABLE_PAT / AIRTABLE_API_KEY / AIRTABLE_TOKEN'); process.exit(1); }
 if (!RESEND_KEY && !DRY_RUN) { console.error('❌ Falta RESEND_API_KEY (solo necesaria en --live)'); process.exit(1); }
 
 // Los 11 envíos (12 porteros, 11 familias).
@@ -87,8 +86,6 @@ const F = {
 // ============================================================
 // HELPERS
 // ============================================================
-const airtable = new Airtable({ apiKey: AIRTABLE_KEY });
-const base = airtable.base(AIRTABLE_BASE_ID);
 const resend = RESEND_KEY ? new Resend(RESEND_KEY) : null;
 
 const eur = n => (Math.round(Number(n) * 100) / 100)
@@ -105,8 +102,11 @@ const titleCase = s => String(s || '')
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function fetchRecord(recordId) {
-  const rec = await base(CAMPUS_TABLE_ID).find(recordId);
-  return { id: rec.id, fields: rec.fields };
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${CAMPUS_TABLE_ID}/${recordId}?returnFieldsByFieldId=true`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_KEY}` } });
+  if (!res.ok) throw new Error(`Airtable ${res.status}: ${await res.text()}`);
+  const j = await res.json();
+  return { id: j.id, fields: j.fields };
 }
 
 function derive(fields) {
@@ -115,9 +115,9 @@ function derive(fields) {
   const reserva   = Number(fields[F.aPagarReserva] || 0);
   const segPago   = Number(fields[F.aPagar2_3plz] || 0);
   const tercero   = Math.max(0, +(total - reserva - segPago).toFixed(2));
-  const plan      = (fields[F.plan] && fields[F.plan].name) || '';
+  const plan      = (typeof fields[F.plan]    === 'object' ? fields[F.plan]?.name    : fields[F.plan])    || '';
   const planKind  = plan.includes('en 3: ') ? '3plz' : plan.includes('en 2: ') ? '2plz' : 'unico';
-  const formato   = (fields[F.formato] && fields[F.formato].name) || '';
+  const formato   = (typeof fields[F.formato] === 'object' ? fields[F.formato]?.name : fields[F.formato]) || '';
   const porteroNombre = titleCase(`${fields[F.nombrePortero] || ''} ${fields[F.apellidosPortero] || ''}`);
   const porteroCorto  = titleCase(firstName(fields[F.nombrePortero]));
   return { total, pagado, reserva, segPago, tercero, plan, planKind, formato, porteroNombre, porteroCorto };
