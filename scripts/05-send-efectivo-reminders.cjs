@@ -7,11 +7,13 @@
  * la parte correspondiente:
  *   - Grupo A: 3 plazos Efectivo · reserva pendiente
  *   - Grupo B: Pago único Efectivo · pendiente
+ *   - Grupo C: 3 plazos Efectivo · reserva pagada · 2º plazo pendiente
  *
  * Uso:
  *   node 05-send-efectivo-reminders.js                # DRY-RUN (por defecto)
  *   node 05-send-efectivo-reminders.js --live         # envío real
  *   node 05-send-efectivo-reminders.js --live --only=rec101VNb0nJWzLQt
+ *   node 05-send-efectivo-reminders.js --group=C      # filtra por grupo (A/B/C)
  *
  * Env vars requeridas:
  *   AIRTABLE_PAT       (o AIRTABLE_API_KEY / AIRTABLE_TOKEN)
@@ -35,6 +37,8 @@ const { Resend } = require('resend');
 const DRY_RUN = !process.argv.includes('--live');
 const ONLY_ARG = process.argv.find(a => a.startsWith('--only='));
 const ONLY_RECORD = ONLY_ARG ? ONLY_ARG.split('=')[1] : null;
+const GROUP_ARG = process.argv.find(a => a.startsWith('--group='));
+const ONLY_GROUP = GROUP_ARG ? GROUP_ARG.split('=')[1].toUpperCase() : null;
 
 const AIRTABLE_BASE_ID = 'appsfW2BLNkt8z8cl';
 const CAMPUS_TABLE_ID = 'tblYuQzz5jbkWaeXs';
@@ -60,6 +64,15 @@ const JOBS = [
   { id: 'aniol',  group: 'A', records: ['recgkLZH6IY9MboFv'] },
   { id: 'ikerg',  group: 'A', records: ['recmV1Hp49sDAdBwj'] },
   { id: 'ferran', group: 'A', records: ['recpbHzgZUsFiCETx'] },
+  // GRUPO C — 3 plazos Efectivo, reserva pagada, 2º plazo pendiente
+  { id: 'eloi',   group: 'C', records: ['rec3MYgRQN5lxy46o'] },
+  { id: 'marc',   group: 'C', records: ['recABEHlQTTBZzDgO'] }, // PARCIAL
+  { id: 'vega',   group: 'C', records: ['recBVYzccG0Rm3gOe'] }, // PARCIAL
+  { id: 'hugo',   group: 'C', records: ['recXzIPnEzqxZj7JL'] },
+  { id: 'sergi',  group: 'C', records: ['recbG8XxbZbNXAVHl'] },
+  { id: 'aitor',  group: 'C', records: ['recuNWFgo3mjkoP7c'] },
+  { id: 'josepg', group: 'C', records: ['recvyBqpmDdTV9dk4'] },
+  { id: 'quim',   group: 'C', records: ['recyzbmiMy01WyLYf'] },
   // GRUPO B — Pago único Efectivo, pendiente
   { id: 'alan',   group: 'B', records: ['rec2M1yJMnwy2DfxP'] },
   { id: 'iris',   group: 'B', records: ['recVhpbQMPPo5mm5o'] },
@@ -81,6 +94,9 @@ const F = {
   aPagar2_3plz:   'fld2dredX3eJGv5mf',  // A pagar 2o pago (3 plazos)
   saldoPendiente: 'fldQK6w8IxJ2iPWZ8',
   formato:        'fldo4slp7hMPl3yx6',
+  pagadoReservaEfectivo: 'fld759ggLttWFguxu',
+  totalPagado:           'fldSmNyJqz2mieuCs',
+  restante2:             'fldUohT9PR2BlEd8N',  // Restante 2º plazo (lo que aún se debe del 2º)
 };
 
 // ============================================================
@@ -110,17 +126,22 @@ async function fetchRecord(recordId) {
 }
 
 function derive(fields) {
-  const total     = Number(fields[F.precioTotal] || 0);
-  const pagado    = total - Number(fields[F.saldoPendiente] ?? total);
-  const reserva   = Number(fields[F.aPagarReserva] || 0);
-  const segPago   = Number(fields[F.aPagar2_3plz] || 0);
-  const tercero   = Math.max(0, +(total - reserva - segPago).toFixed(2));
+  const total                  = Number(fields[F.precioTotal] || 0);
+  const totalPagado            = Number(fields[F.totalPagado] || 0);
+  const pagado                 = total - Number(fields[F.saldoPendiente] ?? total);
+  const reserva                = Number(fields[F.aPagarReserva] || 0);
+  const segPago                = Number(fields[F.aPagar2_3plz] || 0);
+  const tercero                = Math.max(0, +(total - reserva - segPago).toFixed(2));
+  const restante2              = Number(fields[F.restante2] ?? segPago);
+  const pagadoReservaEfectivo  = Number(fields[F.pagadoReservaEfectivo] || 0);
+  const reservaPagada          = (totalPagado >= reserva) || (pagadoReservaEfectivo > 0);
+  const segundoYaPagadoParcial = totalPagado > reserva && restante2 < segPago;
   const plan      = (typeof fields[F.plan]    === 'object' ? fields[F.plan]?.name    : fields[F.plan])    || '';
   const planKind  = plan.includes('en 3: ') ? '3plz' : plan.includes('en 2: ') ? '2plz' : 'unico';
   const formato   = (typeof fields[F.formato] === 'object' ? fields[F.formato]?.name : fields[F.formato]) || '';
   const porteroNombre = titleCase(`${fields[F.nombrePortero] || ''} ${fields[F.apellidosPortero] || ''}`);
   const porteroCorto  = titleCase(firstName(fields[F.nombrePortero]));
-  return { total, pagado, reserva, segPago, tercero, plan, planKind, formato, porteroNombre, porteroCorto };
+  return { total, totalPagado, pagado, reserva, segPago, tercero, restante2, pagadoReservaEfectivo, reservaPagada, segundoYaPagadoParcial, plan, planKind, formato, porteroNombre, porteroCorto };
 }
 
 // ============================================================
@@ -143,18 +164,38 @@ function renderIndividual({ padreNombre, d }) {
   let intro, lista, resumenFinal, aEntregar;
 
   if (planKind === '3plz') {
-    aEntregar = reserva + segPago;
-    intro = `Te escribimos para recordarte que se acerca la fecha límite del <strong>1 de mayo</strong> para el segundo plazo de la inscripción de ${porteroCorto} en el Gk Summer Camp PRO 2026.`;
-    lista = `
-      <li><strong>Portero/a:</strong> ${porteroNombre}</li>
-      ${sinAlojamiento ? '<li><strong>Formato:</strong> Sin alojamiento</li>' : ''}
-      <li><strong>Precio total:</strong> ${eur(total)}</li>
-      <li><strong>Plan elegido:</strong> 3 plazos · Efectivo</li>
-      <li><strong>Reserva (pendiente):</strong> ${eur(reserva)}</li>
-      <li><strong>2º plazo (antes del 1 de mayo):</strong> ${eur(segPago)}</li>
-      <li><strong>3r plazo (antes del 1 de junio o el día del campus):</strong> ${eur(tercero)}</li>
-    `;
-    resumenFinal = `A entregar antes del 1 de mayo: ${eur(aEntregar)} (reserva + 2º plazo).`;
+    if (d.reservaPagada) {
+      // Grupo C: reserva ya entregada en efectivo, falta el 2º plazo (eventualmente parcial)
+      aEntregar = d.restante2;
+      intro = `Te escribimos para recordarte que se acerca la fecha límite del <strong>1 de mayo</strong> para el segundo plazo de la inscripción de ${porteroCorto} en el Gk Summer Camp PRO 2026.`;
+      const segLine = d.segundoYaPagadoParcial
+        ? `<li><strong>2º plazo:</strong> ${eur(segPago)} · ya entregado ${eur(d.totalPagado - reserva)}, pendiente ${eur(d.restante2)}</li>`
+        : `<li><strong>2º plazo (antes del 1 de mayo):</strong> ${eur(segPago)}</li>`;
+      lista = `
+        <li><strong>Portero/a:</strong> ${porteroNombre}</li>
+        ${sinAlojamiento ? '<li><strong>Formato:</strong> Sin alojamiento</li>' : ''}
+        <li><strong>Precio total:</strong> ${eur(total)}</li>
+        <li><strong>Plan elegido:</strong> 3 plazos · Efectivo</li>
+        <li><strong>Reserva:</strong> ${eur(reserva)} · ya entregada</li>
+        ${segLine}
+        <li><strong>3r plazo (antes del 1 de junio o el día del campus):</strong> ${eur(tercero)}</li>
+      `;
+      resumenFinal = `A entregar antes del 1 de mayo: ${eur(aEntregar)}.`;
+    } else {
+      // Grupo A: reserva todavía pendiente
+      aEntregar = reserva + segPago;
+      intro = `Te escribimos para recordarte que se acerca la fecha límite del <strong>1 de mayo</strong> para el segundo plazo de la inscripción de ${porteroCorto} en el Gk Summer Camp PRO 2026.`;
+      lista = `
+        <li><strong>Portero/a:</strong> ${porteroNombre}</li>
+        ${sinAlojamiento ? '<li><strong>Formato:</strong> Sin alojamiento</li>' : ''}
+        <li><strong>Precio total:</strong> ${eur(total)}</li>
+        <li><strong>Plan elegido:</strong> 3 plazos · Efectivo</li>
+        <li><strong>Reserva (pendiente):</strong> ${eur(reserva)}</li>
+        <li><strong>2º plazo (antes del 1 de mayo):</strong> ${eur(segPago)}</li>
+        <li><strong>3r plazo (antes del 1 de junio o el día del campus):</strong> ${eur(tercero)}</li>
+      `;
+      resumenFinal = `A entregar antes del 1 de mayo: ${eur(aEntregar)} (reserva + 2º plazo).`;
+    }
   } else {
     // Pago único
     const pendiente = Math.max(0, +(total - pagado).toFixed(2));
@@ -269,8 +310,9 @@ info@academy.onewellgk.com`;
 // PROCESAR UN JOB
 // ============================================================
 async function processJob(job) {
-  // Filtro --only
+  // Filtros
   if (ONLY_RECORD && !job.records.includes(ONLY_RECORD)) return { skipped: true };
+  if (ONLY_GROUP && job.group !== ONLY_GROUP) return { skipped: true };
 
   // Fetch todos los registros del job
   const recs = [];
@@ -324,17 +366,6 @@ async function processJob(job) {
     const messageId = result.data && result.data.id;
     console.log(`   ✅ Enviado. messageId=${messageId}`);
 
-    // Deja comentario de trazabilidad en cada record del job
-    const ts = new Date().toISOString().slice(0, 16).replace('T', ' ');
-    for (const rec of recs) {
-      try {
-        await base(CAMPUS_TABLE_ID).update(rec.id, {}); // no-op para forzar last-modified
-        // (Comentarios nativos Airtable no se exponen en la SDK oficial; si quieres
-        //  trazabilidad en un campo de texto, añade aquí la actualización:)
-        // Ejemplo: await base(CAMPUS_TABLE_ID).update(rec.id, { 'fldXXXXXX': `${ts} email reserva enviado (id=${messageId})` });
-      } catch (_) { /* ignorar */ }
-    }
-
     return { ok: true, messageId };
   } catch (err) {
     console.error(`   ❌ Excepción enviando: ${err.message || err}`);
@@ -348,8 +379,9 @@ async function processJob(job) {
 (async () => {
   console.log('='.repeat(70));
   console.log(`Gk Summer Camp PRO 2026 — Emails recordatorio efectivo`);
-  console.log(`Modo: ${DRY_RUN ? '🧪 DRY-RUN' : '🚀 LIVE'}${ONLY_RECORD ? `  ·  Solo: ${ONLY_RECORD}` : ''}`);
-  console.log(`Jobs a procesar: ${JOBS.length}`);
+  console.log(`Modo: ${DRY_RUN ? '🧪 DRY-RUN' : '🚀 LIVE'}${ONLY_RECORD ? `  ·  Solo: ${ONLY_RECORD}` : ''}${ONLY_GROUP ? `  ·  Grupo: ${ONLY_GROUP}` : ''}`);
+  const jobsToRun = JOBS.filter(j => (!ONLY_GROUP || j.group === ONLY_GROUP) && (!ONLY_RECORD || j.records.includes(ONLY_RECORD)));
+  console.log(`Jobs a procesar: ${jobsToRun.length} (de ${JOBS.length} totales)`);
   console.log('='.repeat(70));
 
   const summary = { ok: 0, failed: 0, skipped: 0, dryRun: 0 };
