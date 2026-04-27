@@ -85,6 +85,7 @@ export const CAMPUS_FIELDS = {
   pagado3rPago: 'fldSliYAvZr7xL8OJ',
   fechaPago2oPlazo: 'fld04ITQeqlZBI4Eq',
   fechaPago3rPlazo: 'fldpdDpqmlaM1PLuU',
+  pagadoTarjetaJotform: 'fldXkdAVl0E74W7kk',
 
   // Stripe
   stripeCustomerId: 'fldMPHtDsDSsiPMwJ',

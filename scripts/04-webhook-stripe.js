@@ -1,13 +1,22 @@
 /**
  * Script 04 — Servidor webhook de Stripe
  *
- * Escucha eventos `checkout.session.completed` y actualiza Airtable:
- *   - plazo "2o": Pagado 2o pago, Fecha pago 2o plazo
- *   - plazo "3o": Pagado 3r pago, Fecha pago 3r plazo
+ * Escucha eventos `checkout.session.completed` y actualiza Airtable.
+ *
+ * Hace dispatch por `metadata.tipo`:
+ *   - "campus_2026" (o sin tipo, retro-compat): flujo automático masivo (n8n).
+ *     Usa `metadata.plazo` ('2o' | '3o') → Pagado X / Fecha X.
+ *   - "campus_2026_manual": flujo manual de coordinador. Usa `metadata.concepto`:
+ *       · reserva_150              → set Pagado tarjeta Jotform = importe
+ *       · pago_completo_restante   → += Pagado tarjeta Jotform
+ *       · 2o_plazo                 → set Pagado 2º + Fecha 2º
+ *       · completar_2o_plazo       → += Pagado 2º + Fecha 2º
+ *       · 3r_plazo                 → set Pagado 3º + Fecha 3º
+ *       · completar_3r_plazo       → += Pagado 3º + Fecha 3º
+ *     Idempotencia por `payment_intent` en Stripe Transaction ID (CSV).
  *
  * Verifica la firma del webhook con STRIPE_WEBHOOK_SECRET.
  * Responde 200 inmediatamente y procesa el evento en background.
- * Idempotente: si el campo "Pagado Xº pago" ya está poblado, no reescribe.
  */
 
 import express from 'express';
@@ -66,17 +75,38 @@ function logLine(obj) {
 async function procesarCheckoutCompleted(event) {
   const session = event.data.object;
   const eventId = event.id;
-
   const recordId = session.metadata?.airtable_record_id;
-  const plazo = session.metadata?.plazo;
-  const amountTotal = session.amount_total;
+  const tipo = session.metadata?.tipo;
 
-  if (!recordId || !plazo) {
+  if (!recordId) {
     logLine({
       level: 'warn',
       event_id: eventId,
       event_type: event.type,
-      msg: 'metadata.airtable_record_id o metadata.plazo faltan; skip',
+      msg: 'metadata.airtable_record_id falta; skip',
+      metadata: session.metadata,
+    });
+    return;
+  }
+
+  if (tipo === 'campus_2026_manual') {
+    return procesarManual(event, session, eventId, recordId);
+  }
+  // Default: flujo automático ("campus_2026" o sin tipo, retro-compat)
+  return procesarAutomatico(event, session, eventId, recordId);
+}
+
+async function procesarAutomatico(event, session, eventId, recordId) {
+  const plazo = session.metadata?.plazo;
+  const amountTotal = session.amount_total;
+
+  if (!plazo) {
+    logLine({
+      level: 'warn',
+      event_id: eventId,
+      event_type: event.type,
+      airtable_record_id: recordId,
+      msg: 'metadata.plazo falta en flujo automático; skip',
       metadata: session.metadata,
     });
     return;
@@ -154,6 +184,126 @@ async function procesarCheckoutCompleted(event) {
     importe_eur: importeEur,
     fecha_pago: fecha,
     msg: 'Airtable actualizado',
+  });
+}
+
+async function procesarManual(event, session, eventId, recordId) {
+  const concepto = session.metadata?.concepto;
+  const piId = session.payment_intent;
+  const importeEur = (session.amount_total || 0) / 100;
+  const fecha = dateStampMadrid();
+
+  if (!concepto) {
+    logLine({
+      level: 'warn',
+      event_id: eventId,
+      event_type: event.type,
+      airtable_record_id: recordId,
+      msg: 'metadata.concepto falta en flujo manual; skip',
+      metadata: session.metadata,
+    });
+    return;
+  }
+
+  // Idempotencia por payment_intent: si ya está registrado en STRIPE_TX_ID, skip.
+  // Permite varios PIs por record (ej. reserva_150 + pago_completo_restante) en CSV.
+  const current = await getCampusRecord(recordId);
+  const existingTxId = String(current.fields?.[CAMPUS_FIELDS.stripeTransactionId] || '');
+  if (piId && existingTxId.split(',').map((s) => s.trim()).includes(piId)) {
+    logLine({
+      level: 'info',
+      event_id: eventId,
+      event_type: event.type,
+      airtable_record_id: recordId,
+      tipo: 'campus_2026_manual',
+      concepto,
+      pi_id: piId,
+      msg: 'pi_id ya registrado en stripeTransactionId; evento duplicado, skip',
+    });
+    return;
+  }
+  const newTxId = existingTxId ? `${existingTxId},${piId}` : piId;
+
+  let updates = null;
+
+  switch (concepto) {
+    case 'reserva_150': {
+      updates = {
+        [CAMPUS_FIELDS.pagadoTarjetaJotform]: importeEur,
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    case 'pago_completo_restante': {
+      const prev = Number(current.fields?.[CAMPUS_FIELDS.pagadoTarjetaJotform] || 0);
+      updates = {
+        [CAMPUS_FIELDS.pagadoTarjetaJotform]: +(prev + importeEur).toFixed(2),
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    case '2o_plazo': {
+      updates = {
+        [CAMPUS_FIELDS.pagado2oPago]: importeEur,
+        [CAMPUS_FIELDS.fechaPago2oPlazo]: fecha,
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    case 'completar_2o_plazo': {
+      const prev = Number(current.fields?.[CAMPUS_FIELDS.pagado2oPago] || 0);
+      updates = {
+        [CAMPUS_FIELDS.pagado2oPago]: +(prev + importeEur).toFixed(2),
+        [CAMPUS_FIELDS.fechaPago2oPlazo]: fecha,
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    case '3r_plazo': {
+      updates = {
+        [CAMPUS_FIELDS.pagado3rPago]: importeEur,
+        [CAMPUS_FIELDS.fechaPago3rPlazo]: fecha,
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    case 'completar_3r_plazo': {
+      const prev = Number(current.fields?.[CAMPUS_FIELDS.pagado3rPago] || 0);
+      updates = {
+        [CAMPUS_FIELDS.pagado3rPago]: +(prev + importeEur).toFixed(2),
+        [CAMPUS_FIELDS.fechaPago3rPlazo]: fecha,
+        [CAMPUS_FIELDS.stripeTransactionId]: newTxId,
+      };
+      break;
+    }
+    default:
+      logLine({
+        level: 'warn',
+        event_id: eventId,
+        event_type: event.type,
+        airtable_record_id: recordId,
+        tipo: 'campus_2026_manual',
+        concepto,
+        importe_eur: importeEur,
+        pi_id: piId,
+        msg: `concepto manual desconocido; revisión manual requerida (no se actualiza Airtable)`,
+      });
+      return;
+  }
+
+  await updateCampusRecord(recordId, updates);
+
+  logLine({
+    level: 'info',
+    event_id: eventId,
+    event_type: event.type,
+    airtable_record_id: recordId,
+    tipo: 'campus_2026_manual',
+    concepto,
+    importe_eur: importeEur,
+    pi_id: piId,
+    fecha_pago: fecha,
+    msg: 'Airtable actualizado (manual)',
   });
 }
 
