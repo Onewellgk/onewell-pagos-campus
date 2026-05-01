@@ -135,6 +135,37 @@ export async function updateCampusRecord(recordId, fields) {
 }
 
 /**
+ * Busca un único registro Campus por su `Jotform Submission ID`.
+ * Devuelve el record (con `id` y `fields`) o `null` si no existe.
+ *
+ * Usado por el webhook handler `procesarCampusSetupIntent` para resolver
+ * sid → recordId. Si la integración nativa Jotform→Airtable aún no ha
+ * creado el registro (race condition), `null` permite al caller devolver
+ * 503 a Stripe para que reintente.
+ */
+export async function findCampusBySubmissionId(submissionId) {
+  const sid = String(submissionId || '').trim();
+  if (!sid) return null;
+
+  const escaped = sid.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const formula = `{${CAMPUS_FIELDS.jotformSubmissionId}}="${escaped}"`;
+  const filter = encodeURIComponent(formula);
+  const url = `${BASE_URL}/${config.airtable.baseId}/${config.airtable.tableCampus}?filterByFormula=${filter}&maxRecords=1&returnFieldsByFieldId=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${config.airtable.pat}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Airtable find by sid ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  return data.records?.[0] || null;
+}
+
+/**
  * Lista candidatos Campus para recordatorio de Payment Link.
  * Filtro: saldo > 0, recordatorio aún no enviado, plazo próximo no en blanco,
  * importe próximo plazo > 0, y Fecha próximo plazo = HOY + N días (timezone Madrid).
