@@ -33,6 +33,12 @@ export const config = {
   webhook: {
     port: parseInt(process.env.WEBHOOK_PORT || '3000', 10),
   },
+  // URL pública del propio servicio (donde llegan success_url/cancel_url de Stripe Checkout).
+  // Opcional para no romper deploys existentes; /post-jotform devolverá 500 si falta.
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '') || null,
+  // Modo test del endpoint /post-jotform. Solo true cuando explícitamente 'true'.
+  // Permite probar el flujo sin pasar por Jotform real (con submission sintética).
+  enableTestMode: process.env.ENABLE_TEST_MODE === 'true',
   dryRun: process.env.DRY_RUN !== 'false',
   logLevel: process.env.LOG_LEVEL || 'info',
 };
@@ -89,6 +95,13 @@ export const CAMPUS_FIELDS = {
 
   // Stripe
   stripeCustomerId: 'fldMPHtDsDSsiPMwJ',
+  // PaymentMethod ID (creado en Phase 0). Solo se rellena cuando el cliente
+  // autorizó setup_future_usage='off_session' (es decir, cuando la tarjeta
+  // queda guardada para cobros futuros del 2º/3r plazo).
+  stripePaymentMethodId: 'fldwVhfVQP2PnagE0',
+  // Datos de transacción (longText). Bloque legible escrito por el webhook con
+  // resumen del cobro: importe, plan, customer/PI/PM IDs, marca/last4 de tarjeta.
+  datosTransaccion: 'fldMvuDNt4thhQ41M',
 
   // Estado de la inscripción — requisito para que el script procese cobros.
   // Valores posibles: 'Interés inicial', 'Registro - Acceso prioritario',
@@ -98,6 +111,7 @@ export const CAMPUS_FIELDS = {
 
 // QIDs de Jotform (confirmados contra submission real)
 export const JOTFORM_QIDS = {
+  // Existentes (LEGACY, usados por scripts 01/02)
   email: '31',
   telefono1: '480',
   telefono2: '481',
@@ -105,4 +119,15 @@ export const JOTFORM_QIDS = {
   dniTutor: '200',
   direccion: '380',
   stripeCheckout: '351',
+
+  // Phase 2 — leídos por /post-jotform para decidir flujo y construir Checkout.
+  nombrePortero: '3',
+  metodoPagoUnico: '227',
+  plazosDePago: '391',
+  metodoRestanteFrac2: '457',
+  metodoReserva: '458',
+  metodoRestanteFrac3: '459',
+  precioBase: '460',
+  aCobrarAhora: '461',
+  saldoPendiente: '467',
 };
