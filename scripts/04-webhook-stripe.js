@@ -47,6 +47,7 @@ import {
 } from '../src/airtable.js';
 import { constructWebhookEvent, stripe } from '../src/stripe.js';
 import { mountPostJotformRoutes } from '../src/post-jotform.js';
+import { mountAdminRoutes } from '../src/admin-routes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGS_DIR = join(__dirname, '..', 'logs');
@@ -72,6 +73,14 @@ if (config.enableTestMode) {
   console.warn(
     '⚠ ENABLE_TEST_MODE=true — el endpoint /post-jotform aceptará ?test=1 con submission sintética.\n' +
     '  Esto debe estar deshabilitado en producción una vez validado el smoke test.'
+  );
+}
+
+if (!config.adminApiToken) {
+  console.warn(
+    '⚠ ADMIN_API_TOKEN no configurada. Los endpoints /admin/* devolverán 503 cuando se llamen.\n' +
+    '  Setea esta env en EasyPanel (string aleatorio largo) y configúrala en las Airtable Automations\n' +
+    '  como header X-Admin-Token.'
   );
 }
 
@@ -528,6 +537,10 @@ app.get('/health', (_req, res) => {
 // Las rutas /post-jotform y landings se montan ANTES del webhook para que cada
 // una tenga su parser por defecto. El webhook usa express.raw solo en su ruta.
 mountPostJotformRoutes(app, { logLine });
+// Phase 2c — endpoints /admin/* que invoca Airtable Automations para el flujo
+// de recovery (familia que no completó pago de reserva con tarjeta). Auth con
+// header X-Admin-Token. Cada endpoint monta su propio express.json local.
+mountAdminRoutes(app, { logLine });
 
 app.post(
   '/webhook-stripe',
@@ -612,6 +625,8 @@ app.listen(port, () => {
   console.log(`  GET  /post-jotform/cancel       (Phase 2)`);
   console.log(`  GET  /gracias-efectivo          (Phase 2)`);
   console.log(`  GET  /gracias-revision          (Phase 2)`);
+  console.log(`  POST /admin/recovery-link-and-send  (Phase 2c)`);
+  console.log(`  POST /admin/notify-uri-recovery     (Phase 2c)`);
   console.log('='.repeat(70));
   console.log(
     '\nRecuerda tener `stripe listen --forward-to localhost:' +
