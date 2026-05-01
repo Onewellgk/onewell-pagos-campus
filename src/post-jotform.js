@@ -43,7 +43,7 @@ const SYNTHETIC_SUBMISSION = {
     [JOTFORM_QIDS.metodoReserva]: { answer: 'Tarjeta (Pago seguro online)' },
     [JOTFORM_QIDS.metodoRestanteFrac3]: { answer: 'Tarjeta (Pago seguro online)' },
     [JOTFORM_QIDS.precioBase]: { answer: '450' },
-    [JOTFORM_QIDS.aCobrarAhora]: { answer: '150' },
+    [JOTFORM_QIDS.aCobrarAhora]: { answer: '1' },
     [JOTFORM_QIDS.saldoPendiente]: { answer: '300' },
   },
 };
