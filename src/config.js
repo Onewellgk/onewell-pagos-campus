@@ -39,6 +39,13 @@ export const config = {
   // Modo test del endpoint /post-jotform. Solo true cuando explícitamente 'true'.
   // Permite probar el flujo sin pasar por Jotform real (con submission sintética).
   enableTestMode: process.env.ENABLE_TEST_MODE === 'true',
+  // Token compartido para autenticar llamadas a los endpoints /admin/*.
+  // Obligatorio en producción; sin él, los endpoints admin devuelven 503.
+  // Lo configura Airtable Automations en el header X-Admin-Token.
+  adminApiToken: process.env.ADMIN_API_TOKEN || null,
+  // Email del equipo de coordinación al que se le envía la notificación
+  // cuando una familia no paga el recovery en 24h. Default: info@academy.onewellgk.com.
+  recoveryNotifyEmail: (process.env.RECOVERY_NOTIFY_EMAIL || 'info@academy.onewellgk.com').trim(),
   dryRun: process.env.DRY_RUN !== 'false',
   logLevel: process.env.LOG_LEVEL || 'info',
 };
@@ -107,6 +114,26 @@ export const CAMPUS_FIELDS = {
   // Valores posibles: 'Interés inicial', 'Registro - Acceso prioritario',
   // 'Inscrito', 'Baja', 'Solicitud de plaza'. El script solo procesa 'Inscrito'.
   estado: 'fldQuL5odLqkWubzL',
+
+  // Phase 2c — flujo de recovery cuando la reserva quedó pendiente con tarjeta.
+  // Estado calculado por fórmula: '✅ Pagado tarjeta' | 'Pendiente reserva efectivo'
+  // | '⚠️ Pendiente reserva tarjeta' | '🆕 Sin pago — recién inscrito' | 'Otro (revisión manual)'.
+  // El endpoint /admin/recovery-link-and-send solo procesa '⚠️ Pendiente reserva tarjeta'.
+  estadoPagoReserva: 'fldmQUvSUzoM8eTDK',
+  // URL del Stripe Payment Link generado por /admin/recovery-link-and-send.
+  // Se incluye en el email enviado a la familia. Persistente: no se regenera
+  // si ya tiene valor (idempotencia). Limitado a un solo cobro vía restrictions.
+  paymentLinkReserva: 'fld4AAh9dcPfMh5WP',
+  // Flag que el coordinador marca cuando una inscripción se gestiona manualmente
+  // (WhatsApp, teléfono, link específico fuera del flujo automático). El endpoint
+  // /admin/recovery-link-and-send NO procesa records con este flag activado.
+  comunicacionManual: 'fldwV12up1XPWi0A6',
+  // Timestamp del envío del email de recovery a la familia. Idempotencia:
+  // si tiene valor, /admin/recovery-link-and-send no reenvía.
+  recoveryEmailEnviadoEn: 'fldLtm9rCRvjiheJK',
+  // Timestamp de la notificación al equipo de coordinación tras 24h sin pago.
+  // Idempotencia: si tiene valor, /admin/notify-uri-recovery no reenvía.
+  recoveryUriNotificadoEn: 'fldQAfq63qR0KNhKJ',
 };
 
 // QIDs de Jotform (confirmados contra submission real)
