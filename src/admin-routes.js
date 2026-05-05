@@ -49,7 +49,7 @@ import { stripe } from './stripe.js';
 import { config, CAMPUS_FIELDS } from './config.js';
 import { getCampusRecord, updateCampusRecord } from './airtable.js';
 import { sendEmail } from './email.js';
-import { renderRecoveryEmail, renderUriNotificationEmail } from './email-recovery.js';
+import { renderRecoveryEmail, renderDireccionNotificationEmail } from './email-recovery.js';
 
 const ESTADO_PENDIENTE_TARJETA = '⚠️ Pendiente reserva tarjeta';
 
@@ -581,7 +581,7 @@ async function handleNotifyUriRecovery(req, res, { logLine }) {
   const nombreTutorCompleto = fullName(nombreTutor, apellidosTutor) || '(sin nombre)';
   const telefonoStr = telefonoContacto != null && telefonoContacto !== '' ? String(telefonoContacto) : null;
 
-  const { subject, html, text } = renderUriNotificationEmail({
+  const { subject, html, text } = renderDireccionNotificationEmail({
     nombreCompletoPortero,
     nombreTutor: nombreTutorCompleto,
     emailFamilia: emailContacto || null,

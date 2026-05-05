@@ -5,7 +5,7 @@
  *  1. renderRecoveryEmail()        — para la familia. Se manda cuando una
  *     inscripción quedó en `⚠️ Pendiente reserva tarjeta` (la familia rellenó
  *     el Jotform pero no completó el pago de la reserva con tarjeta).
- *  2. renderUriNotificationEmail() — para el equipo de coordinación. Se manda
+ *  2. renderDireccionNotificationEmail() — para el equipo de coordinación. Se manda
  *     cuando han pasado 24h desde el email anterior sin que la familia haya
  *     pagado, para que un coordinador retome la inscripción manualmente.
  *
@@ -125,7 +125,7 @@ email y te ayudamos.</p>
  * @param {string|null} params.recoveryEnviadoEnIso  Timestamp del envío del email a la familia (ISO).
  * @returns {{ subject: string, html: string, text: string }}
  */
-export function renderUriNotificationEmail({
+export function renderDireccionNotificationEmail({
   nombreCompletoPortero,
   nombreTutor,
   emailFamilia,
